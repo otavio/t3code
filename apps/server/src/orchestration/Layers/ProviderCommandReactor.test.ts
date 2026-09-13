@@ -2491,6 +2491,36 @@ describe("ProviderCommandReactor", () => {
       expect(harness.generateThreadTitle).toHaveBeenCalledTimes(1);
       expect(await readTitle(harness)).toBe("Settings port map");
     });
+
+    it("forgets the refresh when the first turn fails", async () => {
+      const harness = await createHarness();
+      await runFirstTurn(harness, {
+        text: "$wayfinder 769",
+        beforeCompletion: async () => {
+          await harness.runEffect(
+            harness.engine.dispatch({
+              type: "thread.session.set",
+              commandId: CommandId.make("cmd-refresh-title-turn-failed"),
+              threadId,
+              session: {
+                threadId,
+                status: "error",
+                providerName: "codex",
+                providerInstanceId: ProviderInstanceId.make("codex"),
+                runtimeMode: "approval-required",
+                activeTurnId: null,
+                lastError: "Turn failed",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+              createdAt: "2026-01-01T00:00:00.000Z",
+            }),
+          );
+          await harness.drain();
+        },
+      });
+
+      expect(harness.generateThreadTitle).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("matches the client-seeded title even when the outgoing prompt is reformatted", async () => {

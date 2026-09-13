@@ -1293,9 +1293,15 @@ const make = Effect.gen(function* () {
       return;
     }
     const thread = yield* resolveThreadDetail(threadId);
+    const status = thread?.session?.status;
+    // A deleted thread or a first turn that ended without completing never refreshes.
+    if (!thread || status === "error" || status === "stopped" || status === "interrupted") {
+      firstTurnTitlesToRefresh.delete(threadId);
+      return;
+    }
     const turnFinished =
-      thread?.session?.status === "ready" &&
-      !thread.session.activeTurnId &&
+      status === "ready" &&
+      !thread.session?.activeTurnId &&
       thread.messages.some((message) => message.role === "assistant" && message.text);
     // The delete also stops the other caller when both observe a finished turn.
     if (!turnFinished || !firstTurnTitlesToRefresh.delete(threadId)) {
@@ -1975,6 +1981,11 @@ const make = Effect.gen(function* () {
       }),
     );
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
+      // Deleting a thread stops its session without a later session update to clear this.
+      if (event.type === "thread.deleted") {
+        firstTurnTitlesToRefresh.delete(event.payload.threadId);
+        return;
+      }
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
         event.type === "thread.runtime-mode-set" ||
