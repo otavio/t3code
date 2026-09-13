@@ -39,9 +39,9 @@ function ConnectCliAuthMessage({
 
 const invalidLinkMessage = {
   eyebrow: "Authorization request",
-  title: "This connect link is incomplete",
+  title: "This connect link is invalid",
   description:
-    "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.",
+    "The link may be incomplete or corrupted. Re-run `t3 connect` in your terminal, then copy and open the complete freshly printed URL.",
 } as const;
 
 /**
