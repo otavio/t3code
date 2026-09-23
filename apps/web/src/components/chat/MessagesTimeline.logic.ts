@@ -278,6 +278,19 @@ export function resolveTimelineMinimapHitStripWidth(
   );
 }
 
+// The prev/next buttons are centered 4px into the strip and 20px wide, so
+// their hitbox reaches 14px past the strip's left edge.
+const TIMELINE_MINIMAP_NAVIGATION_REACH = 14;
+
+/**
+ * The prev/next buttons hang outside the strip's height, so the strip's own
+ * width cap does not cover them. Keep them inert to the pointer unless the
+ * gutter can hold them; keyboard focus still reaches them.
+ */
+export function resolveTimelineMinimapNavigationInteractive(collapsedWidth: number): boolean {
+  return collapsedWidth >= TIMELINE_MINIMAP_NAVIGATION_REACH;
+}
+
 /**
  * Once the preview is open, keep the full preview and the space leading to it
  * interactive. The collapsed strip remains gutter-capped so it cannot block

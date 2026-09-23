@@ -189,6 +189,7 @@ import {
   resolveTimelineMinimapHitStripWidth,
   resolveTimelineMinimapIndexFromPointer,
   resolveTimelineMinimapInteractiveWidth,
+  resolveTimelineMinimapNavigationInteractive,
   resolveTimelineMinimapTopPercent,
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
@@ -1419,6 +1420,7 @@ function TimelineMinimap({
       ),
     [items, resolvedActiveIndex],
   );
+  const navigationInteractive = resolveTimelineMinimapNavigationInteractive(hitStripWidth);
   const activeTopPercent =
     resolvedActiveIndex === null
       ? 0
@@ -1499,6 +1501,7 @@ function TimelineMinimap({
           <TimelineMinimapNavigationButton
             direction="previous"
             disabled={previousItem === null}
+            interactive={navigationInteractive}
             onClick={() => {
               if (previousItem) onSelect(previousItem);
             }}
@@ -1614,6 +1617,7 @@ function TimelineMinimap({
           <TimelineMinimapNavigationButton
             direction="next"
             disabled={nextItem === null}
+            interactive={navigationInteractive}
             onClick={() => {
               if (nextItem) onSelect(nextItem);
             }}
@@ -1627,10 +1631,12 @@ function TimelineMinimap({
 function TimelineMinimapNavigationButton({
   direction,
   disabled,
+  interactive,
   onClick,
 }: {
   direction: "previous" | "next";
   disabled: boolean;
+  interactive: boolean;
   onClick: () => void;
 }) {
   const previous = direction === "previous";
@@ -1643,7 +1649,8 @@ function TimelineMinimapNavigationButton({
         render={
           <span
             className={cn(
-              "absolute left-1 z-10 inline-flex -translate-x-1/2 opacity-0 pointer-events-auto transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+              "absolute left-1 z-10 inline-flex -translate-x-1/2 opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+              interactive ? "pointer-events-auto" : "pointer-events-none",
               previous ? "bottom-[calc(100%+2px)]" : "top-[calc(100%+2px)]",
             )}
           />
