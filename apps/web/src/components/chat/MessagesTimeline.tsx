@@ -226,6 +226,7 @@ import {
 } from "../composerInlineChip";
 import { createContextPresentationRegistry } from "../contextPresentationRegistry";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
+import { useClientSettings } from "~/hooks/useSettings";
 import type { ChatMarkdownContextReference } from "../ChatMarkdown";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
@@ -691,6 +692,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
+  // Re-measure the minimap gutter when the chat column changes width without a viewport resize.
+  const chatWidth = useClientSettings((settings) => settings.chatWidth);
   const {
     target: readyCitationRequest,
     positioning: citationPositioning,
@@ -830,11 +833,19 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
     const measure = () => {
       const viewportWidth = timelineViewportElement.getBoundingClientRect().width;
-      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(viewportWidth);
+      // Without a mounted row, treat the column as full width so the strip stays inert.
+      const contentWidth =
+        timelineViewportElement
+          .querySelector<HTMLElement>("[data-timeline-root]")
+          ?.getBoundingClientRect().width ?? viewportWidth;
+      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(
+        viewportWidth,
+        contentWidth,
+      );
       setMinimapHasPersistentGutter((current) =>
         current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
       );
-      setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth));
+      setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth));
       reportContentOverflow();
     };
 
@@ -847,7 +858,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [timelineViewportElement, rows.length, reportContentOverflow]);
+  }, [timelineViewportElement, rows.length, reportContentOverflow, chatWidth]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
