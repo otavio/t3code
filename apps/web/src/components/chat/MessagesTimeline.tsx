@@ -36,7 +36,7 @@ import {
 } from "@t3tools/contracts";
 import { parseScopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
-import { environmentThreadDetails } from "../../state/threads";
+import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";
@@ -160,6 +160,8 @@ import type {
 } from "@t3tools/contracts";
 import { Button, InlineButton } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
+import { toastManager } from "../ui/toast";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
@@ -5439,6 +5441,60 @@ function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<TimelineWor
   );
 }
 
+/** Allows the thread's blocked `.envrc`; the next message loads it. */
+// The virtualized timeline remounts rows, so the outcome outlives the button.
+const allowedDirenvWarnings = new Set<string>();
+
+function AllowDirenvButton({
+  threadRef,
+  warningId,
+}: {
+  readonly threadRef: ScopedThreadRef;
+  readonly warningId: string;
+}) {
+  const allowDirenv = useAtomCommand(threadEnvironment.allowDirenv);
+  const [state, setState] = useState<"idle" | "pending" | "allowed">(() =>
+    allowedDirenvWarnings.has(warningId) ? "allowed" : "idle",
+  );
+  const onClick = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    setState("pending");
+    const result = await allowDirenv({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId },
+    });
+    if (result._tag === "Success" && result.value.allowed) {
+      allowedDirenvWarnings.add(warningId);
+      setState("allowed");
+      return;
+    }
+    setState("idle");
+    if (result._tag === "Success") {
+      toastManager.add({
+        type: "error",
+        title: "Could not allow the .envrc",
+        description: result.value.error,
+      });
+    }
+  };
+  return (
+    <Button
+      disabled={state !== "idle"}
+      onClick={onClick}
+      onKeyDown={(event) => event.stopPropagation()}
+      size="xs"
+      type="button"
+      variant="ghost-muted"
+    >
+      {state === "allowed"
+        ? "Allowed · applies to your next message"
+        : state === "pending"
+          ? "Allowing…"
+          : "Allow .envrc"}
+    </Button>
+  );
+}
+
 type WorkEntryRowProps = {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
@@ -5788,6 +5844,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           !showDestructiveRowStyle &&
           !toolIconAcceptsTint(entryIconName, entryToolIcon) ? (
             <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+          ) : null}
+          {workEntry.warningAction?.type === "direnv.allow" && ctx.threadRef ? (
+            <AllowDirenvButton threadRef={ctx.threadRef} warningId={workEntry.id} />
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span

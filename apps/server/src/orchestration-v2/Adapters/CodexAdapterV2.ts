@@ -120,6 +120,7 @@ import {
   MCP_APP_RESOURCE_SCHEME,
 } from "@t3tools/shared/mcpApp";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
+import * as DirenvEnvironment from "../../provider/DirenvEnvironment.ts";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
@@ -1719,7 +1720,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           providerSessionId: input.providerSessionId,
           runtimePolicy: input.runtimePolicy,
           settings: resolvedRuntime?.config ?? adapterOptions.settings,
-          environment: resolvedRuntime?.environment ?? adapterOptions.environment,
+          environment: DirenvEnvironment.withThreadDirenvEnvironment(
+            resolvedRuntime?.environment ?? adapterOptions.environment,
+            input.threadId,
+          ),
         });
         const additionalContextByThread = yield* Ref.make(
           new Map<

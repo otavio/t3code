@@ -23,6 +23,10 @@
       "types": "./src/server/collectStreamText.ts",
       "import": "./src/server/collectStreamText.ts"
     },
+    "./server/direnvEnvironment": {
+      "types": "./src/server/direnvEnvironment.ts",
+      "import": "./src/server/direnvEnvironment.ts"
+    },
     "./server/driver": {
       "types": "./src/server/driver.ts",
       "import": "./src/server/driver.ts"

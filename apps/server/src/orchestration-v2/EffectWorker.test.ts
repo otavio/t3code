@@ -109,6 +109,7 @@ function layerExecutorFor(input: {
         closeInstance: () => Effect.void,
         release: () => record("release"),
         detach: () => record("detach"),
+        takeProjectEnvironmentFailure: () => Effect.succeed(undefined),
       }),
     ),
     Layer.succeed(

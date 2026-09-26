@@ -1404,6 +1404,13 @@ export const OrchestrationV2UserMessageInputIntent = Schema.Literals([
 export type OrchestrationV2UserMessageInputIntent =
   typeof OrchestrationV2UserMessageInputIntent.Type;
 
+/** Something the user can do about a notice, rendered as a button on its row. */
+export const OrchestrationV2SystemNoticeAction = Schema.Struct({
+  /** `direnv allow` the thread's `.envrc` (`projectEnvironment.allowDirenv`). */
+  type: Schema.Literal("direnv.allow"),
+});
+export type OrchestrationV2SystemNoticeAction = typeof OrchestrationV2SystemNoticeAction.Type;
+
 const OrchestrationV2TurnItemBaseFields = {
   toolNonExecutionKind: Schema.optional(Schema.String),
   toolSurface: Schema.optional(ToolActivitySurface),
@@ -1579,6 +1586,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
+    detail: Schema.optional(Schema.String),
+    action: Schema.optional(OrchestrationV2SystemNoticeAction),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2358,6 +2367,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
+    detail: Schema.optional(Schema.String),
+    action: Schema.optional(OrchestrationV2SystemNoticeAction),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

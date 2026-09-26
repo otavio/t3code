@@ -61,6 +61,7 @@ import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEve
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { applyDirenvEnvironment } from "@t3tools/provider-core/server/direnvEnvironment";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
@@ -275,12 +276,12 @@ export function makeGrokAcpAdapterFlavor(
       }),
     makeRuntime:
       options.makeRuntime ??
-      (({ runtimePolicy, ...input }) =>
+      (({ runtimePolicy, direnvEnvironment, ...input }) =>
         makeGrokAcpRuntime({
           ...input,
           interruptPromptOnCancel: input.interruptPromptOnCancel ?? false,
           grokSettings: options.settings,
-          environment: options.environment,
+          environment: applyDirenvEnvironment(options.environment, direnvEnvironment),
           runtimeMode: grokLaunchRuntimeMode(runtimePolicy),
         })),
     // In its Auto mode Grok decides routine actions itself and only asks about

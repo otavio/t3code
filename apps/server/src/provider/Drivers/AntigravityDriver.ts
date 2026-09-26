@@ -1,5 +1,6 @@
 import { withAgentDeviceEnvironment } from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { applyDirenvEnvironment } from "../DirenvEnvironment.ts";
 import { AntigravitySettings, ProviderDriverKind, ProviderSetupError } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
@@ -249,7 +250,10 @@ export const AntigravityDriver: ProviderDriver<
             installation: executable,
             profile,
             cwd: input.cwd,
-            baseEnv: withAgentDeviceEnvironment(processEnvironment, input),
+            baseEnv: withAgentDeviceEnvironment(
+              applyDirenvEnvironment(processEnvironment, input.direnvEnvironment),
+              input,
+            ),
             auth,
             runtimeTempDirectory,
           }),

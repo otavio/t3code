@@ -111,6 +111,10 @@ import {
   OrchestrationGetTurnDiffError,
 } from "./checkpointDiff.ts";
 import {
+  ProjectEnvironmentAllowDirenvInput,
+  ProjectEnvironmentAllowDirenvResult,
+} from "./projectEnvironment.ts";
+import {
   WorktreeSetupCancelInput,
   WorktreeSetupCancelResult,
   WorktreeSetupStreamEvent,
@@ -574,6 +578,7 @@ export const WS_METHODS = {
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeWorktreeSetup: "subscribeWorktreeSetup",
   worktreeSetupCancel: "worktreeSetup.cancel",
+  projectEnvironmentAllowDirenv: "projectEnvironment.allowDirenv",
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribePreviewEvents: "subscribePreviewEvents",
@@ -1377,6 +1382,12 @@ const WsWorktreeSetupCancelRpc = Rpc.make(WS_METHODS.worktreeSetupCancel, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsProjectEnvironmentAllowDirenvRpc = Rpc.make(WS_METHODS.projectEnvironmentAllowDirenv, {
+  payload: ProjectEnvironmentAllowDirenvInput,
+  success: ProjectEnvironmentAllowDirenvResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsGitRunStackedActionRpc = Rpc.make(WS_METHODS.gitRunStackedAction, {
   payload: GitRunStackedActionInput,
   success: GitActionProgressEvent,
@@ -2005,6 +2016,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeVcsStatusRpc,
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
+  WsProjectEnvironmentAllowDirenvRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
