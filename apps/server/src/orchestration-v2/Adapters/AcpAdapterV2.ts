@@ -63,6 +63,7 @@ import {
   type AcpMcpOverAcpBridge,
 } from "../../mcp/AcpMcpOverAcpBridge.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import * as DirenvEnvironment from "../../provider/DirenvEnvironment.ts";
 import {
   applyAcpAgentTerminalUpdate,
   acpContentBlockDisplayText,
@@ -138,6 +139,8 @@ export interface AcpAdapterV2RuntimeInput {
   readonly acpMcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   /** Scoped credentials for terminal fallback when an ACP agent drops `mcpServers`. */
   readonly processEnvironment?: NodeJS.ProcessEnv;
+  /** The project's direnv environment, for flavors to apply to the agent's launch environment. */
+  readonly direnvEnvironment?: DirenvEnvironment.DirenvEnvironmentDiff;
   readonly resumeSessionId?: string;
   readonly interruptPromptOnCancel?: boolean;
   readonly clientCapabilities: EffectAcpSchema.InitializeRequest["clientCapabilities"];
@@ -1513,7 +1516,10 @@ export function makeAcpAdapterV2(
             : yield* makeAcpClientTerminals({
                 spawner: options.clientTerminals.childProcessSpawner,
                 defaultCwd: input.runtimePolicy.cwd ?? process.cwd(),
-                environment: options.clientTerminals.environment,
+                environment: DirenvEnvironment.withThreadDirenvEnvironment(
+                  options.clientTerminals.environment ?? process.env,
+                  input.threadId,
+                ),
                 shellCommands: options.clientTerminals.shellCommands,
                 environmentForSession: (sessionId) => {
                   const remembered = terminalEnvironmentBySessionId.get(sessionId);
@@ -2012,6 +2018,9 @@ export function makeAcpAdapterV2(
             handleRuntimeTerminationAtGeneration(runtimeGeneration),
         ): AcpAdapterV2RuntimeInput => {
           const mcpContext = acpMcpContext(threadId, self);
+          // The launch environment belongs to the session, which loaded it for
+          // the thread that opened it.
+          const direnvEnvironment = DirenvEnvironment.readThreadDirenvEnvironment(input.threadId);
           return {
             cwd: input.runtimePolicy.cwd ?? process.cwd(),
             runtimePolicy: input.runtimePolicy,
@@ -2020,6 +2029,7 @@ export function makeAcpAdapterV2(
             ...(mcpContext.processEnvironment === undefined
               ? {}
               : { processEnvironment: mcpContext.processEnvironment }),
+            ...(direnvEnvironment === undefined ? {} : { direnvEnvironment }),
             ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
             interruptPromptOnCancel: flavor.interruptPromptOnCancel ?? false,
             clientCapabilities: {
