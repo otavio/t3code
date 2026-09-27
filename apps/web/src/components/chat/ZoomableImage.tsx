@@ -8,11 +8,18 @@ import {
   type Ref,
 } from "react";
 
+import {
+  onWindowControlsOverlayGeometryChange,
+  windowControlsOverlayHeight,
+} from "../../lib/windowControlsOverlay";
+
 const MAX_ZOOM = 8;
 
-// The area the viewer fits the image into.
+// The viewer lays out below the native caption strip so its controls never share a row with
+// the window buttons. ExpandedImageDialog and the media dialog viewport mirror this in CSS
+// through --native-titlebar-height.
 function readViewerSize() {
-  return { width: window.innerWidth, height: window.innerHeight };
+  return { width: window.innerWidth, height: window.innerHeight - windowControlsOverlayHeight() };
 }
 
 export interface ZoomableImageHandle {
@@ -123,7 +130,12 @@ export function ZoomableImage({
       changeZoom(1);
     };
     window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
+    // The caption strip can come and go around fullscreen without a matching resize event.
+    const stopOverlayListener = onWindowControlsOverlayGeometryChange(resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      stopOverlayListener();
+    };
   }, [changeZoom]);
 
   useEffect(() => {
