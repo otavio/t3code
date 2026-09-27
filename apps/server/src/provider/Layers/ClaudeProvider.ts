@@ -1,6 +1,7 @@
 import {
   type ClaudeSettings,
   type ModelCapabilities,
+  type ServerProviderModel,
   type ServerProviderSlashCommand,
   type ServerProviderResetCredits,
 } from "@t3tools/contracts";
@@ -12,10 +13,11 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import { createModelCapabilities, readCustomModelEntries } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   query as claudeQuery,
+  type ModelInfo as ClaudeModelInfo,
   type Options as ClaudeQueryOptions,
   type SlashCommand as ClaudeSlashCommand,
   type SDKControlGetUsageResponse,
@@ -236,6 +238,8 @@ type ClaudeCapabilitiesProbe = {
    */
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  /** Models Claude Code reports, including gateway-discovered ones. */
+  readonly models?: ReadonlyArray<ClaudeModelInfo>;
   /**
    * Subscription windows from the SDK's `get_usage` control request, or
    * `undefined` when the request itself failed. Absent windows on an
@@ -305,6 +309,53 @@ function dedupeSlashCommands(
   }
 
   return [...commandsByName.values()];
+}
+
+/** Strip Claude Code's context-window suffix, e.g. `opus[1m]` -> `opus`. */
+function stripClaudeModelSuffix(value: string): string {
+  return value.replace(/\[[^\]]*\]$/, "").trim();
+}
+
+/**
+ * Append models Claude Code reports that the bundled catalog does not know,
+ * such as ids from an Anthropic-compatible gateway with model discovery on.
+ * Catalog models, including ones the installed version cannot run, are never
+ * duplicated and keep T3's descriptors. A custom model with the same slug keeps
+ * its settings-owned row. Discovered ids carry no capabilities
+ * because the adapter resolves options from the catalog only, and are passed
+ * through to Claude Code verbatim at runtime.
+ */
+function mergeClaudeReportedModels(
+  models: ReadonlyArray<ServerProviderModel>,
+  modelCatalog: ClaudeModelCatalog,
+  customModels: ClaudeSettings["customModels"],
+  reportedModels: ReadonlyArray<ClaudeModelInfo> | undefined,
+): ReadonlyArray<ServerProviderModel> {
+  if (!reportedModels?.length) return models;
+  const known = new Set<string>();
+  for (const { model } of modelCatalog.models) {
+    known.add(model.slug.toLowerCase());
+    for (const alias of model.aliases ?? []) known.add(alias.toLowerCase());
+  }
+  for (const entry of readCustomModelEntries(customModels)) known.add(entry.slug.toLowerCase());
+  const discovered: Array<ServerProviderModel> = [];
+  for (const info of reportedModels) {
+    const slug = info.value.trim();
+    // `default` is Claude Code's pointer at its own default model, not a model.
+    if (!slug || slug === "default") continue;
+    const ids = [slug, info.resolvedModel ?? ""].map((id) =>
+      stripClaudeModelSuffix(id).toLowerCase(),
+    );
+    if (ids.some((id) => id && known.has(id))) continue;
+    known.add(slug.toLowerCase());
+    discovered.push({
+      slug,
+      name: info.displayName.trim() || slug,
+      isCustom: false,
+      capabilities: DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    });
+  }
+  return discovered.length ? [...models, ...discovered] : models;
 }
 
 function waitForAbortSignal(signal: AbortSignal): Promise<void> {
@@ -387,6 +438,7 @@ const probeClaudeCapabilities = (
           tokenSource: account?.tokenSource,
           apiProvider: account?.apiProvider,
           slashCommands: parseClaudeInitializationCommands(init.commands),
+          ...(init.models?.length ? { models: init.models } : {}),
           ...(usage ? { usage } : {}),
         } satisfies ClaudeCapabilitiesProbe;
       }),
@@ -526,16 +578,21 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  const models = providerModelsFromSettings(
-    resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
-    claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-  );
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
 
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
+  const models = providerModelsFromSettings(
+    mergeClaudeReportedModels(
+      resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+      modelCatalog,
+      claudeSettings.customModels,
+      capabilities?.models,
+    ),
+    claudeSettings.customModels,
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  );
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
