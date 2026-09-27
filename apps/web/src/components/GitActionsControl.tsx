@@ -1443,7 +1443,7 @@ export default function GitActionsControl({
     },
   );
 
-  const continuePendingDefaultBranchAction = () => {
+  const continuePendingDefaultBranchAction = (featureBranch: boolean) => {
     if (!pendingDefaultBranchAction) return;
     const { action, commitMessage, onConfirmed, filePaths } = pendingDefaultBranchAction;
     setPendingDefaultBranchAction(null);
@@ -1452,20 +1452,7 @@ export default function GitActionsControl({
       ...(commitMessage ? { commitMessage } : {}),
       ...(onConfirmed ? { onConfirmed } : {}),
       ...(filePaths ? { filePaths } : {}),
-      skipDefaultBranchPrompt: true,
-    });
-  };
-
-  const checkoutFeatureBranchAndContinuePendingAction = () => {
-    if (!pendingDefaultBranchAction) return;
-    const { action, commitMessage, onConfirmed, filePaths } = pendingDefaultBranchAction;
-    setPendingDefaultBranchAction(null);
-    void runGitActionWithToast({
-      action,
-      ...(commitMessage ? { commitMessage } : {}),
-      ...(onConfirmed ? { onConfirmed } : {}),
-      ...(filePaths ? { filePaths } : {}),
-      featureBranch: true,
+      featureBranch,
       skipDefaultBranchPrompt: true,
     });
   };
@@ -2152,14 +2139,14 @@ export default function GitActionsControl({
               className="w-full max-w-full sm:w-auto"
               variant="outline"
               size="sm-multiline"
-              onClick={continuePendingDefaultBranchAction}
+              onClick={() => continuePendingDefaultBranchAction(false)}
             >
               {pendingDefaultBranchActionCopy?.continueLabel ?? "Continue"}
             </Button>
             <Button
               className="w-full max-w-full sm:w-auto"
               size="sm-multiline"
-              onClick={checkoutFeatureBranchAndContinuePendingAction}
+              onClick={() => continuePendingDefaultBranchAction(true)}
             >
               Check out feature branch & continue
             </Button>
