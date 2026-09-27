@@ -22,6 +22,19 @@ function getWindowControlsOverlay(): WindowControlsOverlayLike | null {
   return (navigator as NavigatorWithWindowControlsOverlay).windowControlsOverlay ?? null;
 }
 
+/** Calls `listener` when the native caption strip appears, disappears, or changes size. */
+export function onWindowControlsOverlayGeometryChange(listener: () => void): () => void {
+  const overlay = getWindowControlsOverlay();
+  if (!overlay) {
+    return () => {};
+  }
+
+  overlay.addEventListener("geometrychange", listener);
+  return () => {
+    overlay.removeEventListener("geometrychange", listener);
+  };
+}
+
 export function syncDocumentWindowControlsOverlayClass(): () => void {
   if (typeof document === "undefined") {
     return () => {};
@@ -33,14 +46,7 @@ export function syncDocumentWindowControlsOverlayClass(): () => void {
   };
 
   update();
-  if (!overlay) {
-    return () => {};
-  }
-
-  overlay.addEventListener("geometrychange", update);
-  return () => {
-    overlay.removeEventListener("geometrychange", update);
-  };
+  return onWindowControlsOverlayGeometryChange(update);
 }
 
 function getElectronPlatformClassNames(
