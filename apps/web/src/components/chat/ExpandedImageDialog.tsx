@@ -205,7 +205,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             <Button
               type="button"
               ref={closeButtonRef}
-              size="icon-xs"
+              size="icon-sm"
               variant="media-close"
               className="absolute right-0 -top-10 z-20"
               onClick={onClose}
