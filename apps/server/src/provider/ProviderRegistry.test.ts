@@ -3202,6 +3202,13 @@ it.layer(
               },
               { value: "sonnet", displayName: "Sonnet", description: "" },
               { value: "gateway/glm-5", displayName: "GLM 5", description: "" },
+              {
+                value: "gateway/claude-relay",
+                displayName: "Claude Relay",
+                description: "",
+                supportsEffort: true,
+                supportedEffortLevels: ["low", "high"],
+              },
               { value: "gateway/kimi-3", displayName: "Kimi 3", description: "" },
             ],
           }),
@@ -3211,9 +3218,25 @@ it.layer(
         );
         assert.deepStrictEqual(
           reported.map((model) => [model.slug, model.name]),
-          [["gateway/glm-5", "GLM 5"]],
+          [
+            ["gateway/glm-5", "GLM 5"],
+            ["gateway/claude-relay", "Claude Relay"],
+          ],
         );
         assert.deepStrictEqual(reported[0]?.capabilities, { optionDescriptors: [] });
+        assert.deepStrictEqual(reported[1]?.capabilities, {
+          optionDescriptors: [
+            {
+              id: "effort",
+              label: "Reasoning",
+              type: "select",
+              options: [
+                { id: "low", label: "Low" },
+                { id: "high", label: "High", isDefault: true },
+              ],
+            },
+          ],
+        });
         assert.deepStrictEqual(
           status.models.filter((model) => model.isCustom).map((model) => model.name),
           ["My Custom", "Kimi (mine)"],
