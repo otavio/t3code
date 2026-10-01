@@ -97,6 +97,7 @@ import {
 } from "../../provider/Drivers/ClaudeHome.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeModelCatalog,
   resolveClaudeCatalogContextWindowTokens,
 } from "../../provider/ClaudeModelCatalog.ts";
 import {
@@ -807,6 +808,8 @@ export const layerQueryRunner: Layer.Layer<
 
 export function makeClaudeQueryOptions(input: {
   readonly modelSelection: ModelSelection;
+  /** Resolves model options; defaults to the bundled catalog. */
+  readonly modelCatalog?: ClaudeModelCatalog;
   readonly nativeThreadId: string;
   readonly resume: boolean;
   readonly resumeSessionAt?: string;
@@ -831,7 +834,7 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
 }): ClaudeAgentSdkQueryOptions {
-  const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  const compiledSelection = compileClaudeModelSelection(input.modelSelection, input.modelCatalog);
   const {
     "permission-mode": launchArgPermissionMode,
     "dangerously-skip-permissions": launchArgSkipPermissions,
@@ -3019,6 +3022,12 @@ export interface ClaudeAdapterV2Options {
   readonly queryRunner: ClaudeAgentSdkQueryRunnerShape;
   readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
   readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
+  /**
+   * The instance's model catalog, read per query so models Claude Code
+   * reports (such as gateway-discovered ones) resolve their options.
+   * Defaults to the bundled catalog.
+   */
+  readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   /** Sink for wake-turn continuation requests; defaults to dropping them. */
   readonly continuationRequests?: {
     readonly offer: (
@@ -3035,6 +3044,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const continuationRequests = adapterOptions.continuationRequests ?? {
     offer: () => Effect.void,
   };
+  const modelCatalog = adapterOptions.modelCatalog ?? Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG);
 
   // Re-scan on every send: skills are added and switched off mid-session, and
   // the scan is a few directory reads. A skill switched off via skillOverrides,
@@ -7271,7 +7281,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : { allowedTools: queryPolicy.allowedTools }),
           });
           const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
-          const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection);
+          const catalog = yield* modelCatalog;
+          const compiledSelection = compileClaudeModelSelection(turnInput.modelSelection, catalog);
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // A continuation prompts nothing: it drains output the live process
@@ -7341,6 +7352,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
+            modelCatalog: catalog,
             nativeThreadId,
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
@@ -7566,7 +7578,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : yield* makeClaudeUserMessageWithAttachments({
                     text: applyClaudePromptEffortPrefix(
                       turnInput.message.text,
-                      compileClaudeModelSelection(turnInput.modelSelection).promptEffort,
+                      compileClaudeModelSelection(turnInput.modelSelection, yield* modelCatalog)
+                        .promptEffort,
                     ),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
@@ -7775,7 +7788,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const userMessage = yield* makeClaudeUserMessageWithAttachments({
               text: applyClaudePromptEffortPrefix(
                 turnInput.message.text,
-                compileClaudeModelSelection(currentTurn.input.modelSelection).promptEffort,
+                compileClaudeModelSelection(currentTurn.input.modelSelection, yield* modelCatalog)
+                  .promptEffort,
               ),
               attachments: turnInput.message.attachments,
               priority: "now",
@@ -8172,7 +8186,7 @@ export type ClaudeAdapterV2DriverEnv =
 export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   function* (
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
-    hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits"> = {},
+    hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits" | "modelCatalog"> = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
     const fileSystem = yield* FileSystem.FileSystem;

@@ -12,6 +12,7 @@
  *
  * @module provider/Drivers/ClaudeDriver
  */
+import type { ModelInfo as ClaudeModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import { ClaudeSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
@@ -19,6 +20,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
@@ -45,7 +47,7 @@ import {
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
-import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import { resolveClaudeModelCatalog, withClaudeReportedModels } from "../ClaudeModelCatalog.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -166,6 +168,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         continuationGroupKey,
       });
 
+      // Models from the last successful capabilities probe, so sessions can
+      // resolve options for gateway-discovered models the manifest lacks.
+      const reportedModels = yield* Ref.make<ReadonlyArray<ClaudeModelInfo>>([]);
+      const sessionModelCatalog = Effect.all([modelCatalog, Ref.get(reportedModels)]).pipe(
+        Effect.map(([catalog, models]) =>
+          withClaudeReportedModels(catalog, effectiveConfig.customModels, models),
+        ),
+      );
+
       const scopedLimitNames = yield* makeClaudeScopedLimitNames;
       const orchestrationAdapter = yield* createClaudeAdapterV2(
         {
@@ -176,7 +187,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           enabled,
           config,
         },
-        { scopedLimitNames, onUsageLimits: (update) => snapshot.applyUsageLimits(update) },
+        {
+          scopedLimitNames,
+          modelCatalog: sessionModelCatalog,
+          onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+        },
       ).pipe(
         Effect.mapError(
           (cause) =>
@@ -191,7 +206,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const textGeneration = yield* makeClaudeTextGeneration(
         effectiveConfig,
         processEnv,
-        modelCatalog,
+        sessionModelCatalog,
       );
 
       // Per-instance capabilities cache: keyed on binary + resolved HOME so
@@ -201,6 +216,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         timeToLive: CAPABILITIES_PROBE_TTL,
         lookup: () =>
           probeClaudeCapabilities(effectiveConfig, processEnv, cwd).pipe(
+            Effect.tap((probe) =>
+              probe ? Ref.set(reportedModels, probe.models ?? []) : Effect.void,
+            ),
             Effect.provideService(Path.Path, path),
           ),
       });
