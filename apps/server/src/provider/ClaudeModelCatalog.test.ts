@@ -287,4 +287,18 @@ describe("Claude model catalog", () => {
       undefined,
     );
   });
+
+  it("lists a reported model once regardless of context-window suffix or order", () => {
+    const reported = (value: string) => ({ value, displayName: "Gateway", description: "" });
+    const catalog = withClaudeReportedModels(
+      resolveClaudeModelCatalog(manifest()),
+      [],
+      [reported("gateway/model[1m]"), reported("gateway/model"), reported("gateway/model[1m]")],
+    );
+
+    assert.deepStrictEqual(
+      resolveClaudeModelsForVersion(catalog, "3.2.0").map((model) => model.slug),
+      ["claude-synthetic-next", "gateway/model[1m]"],
+    );
+  });
 });
