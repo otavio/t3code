@@ -9,6 +9,7 @@ import {
   ProviderTurnId,
   ThreadId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2ProviderTurn,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -41,9 +42,14 @@ const runFirstTurn = Effect.fn("runFirstTurn")(function* (input: {
   readonly text: string;
   readonly ending: "completed" | "interrupted";
   readonly renameDuringRun?: boolean;
+  readonly steerRestartDuringRun?: boolean;
 }) {
   const cwd = yield* checkpointWorkspace(`title-refresh-${input.name}`);
   const events = yield* Queue.unbounded<ProviderAdapterV2Event>();
+  const startedTurns = new Map<
+    string,
+    { readonly providerTurn: OrchestrationV2ProviderTurn; readonly runOrdinal: number }
+  >();
   const adapter: ProviderAdapterV2Shape = {
     instanceId,
     driver,
@@ -88,24 +94,47 @@ const runFirstTurn = Effect.fn("runFirstTurn")(function* (input: {
               updatedAt: now,
             }),
           resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
-          startTurn: (turn) =>
-            Queue.offer(events, {
+          startTurn: (turn) => {
+            const providerTurn = {
+              id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
+              providerThreadId: turn.providerThread.id,
+              nodeId: turn.rootNodeId,
+              runAttemptId: turn.attemptId,
+              nativeTurnRef: { driver, nativeId: `native:${turn.attemptId}`, strength: "strong" },
+              ordinal: turn.providerTurnOrdinal,
+              status: "running",
+              startedAt: now,
+              completedAt: null,
+            } as const;
+            startedTurns.set(providerTurn.id, { providerTurn, runOrdinal: turn.runOrdinal });
+            return Queue.offer(events, {
               type: "provider_turn.updated",
               driver,
-              providerTurn: {
-                id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
-                providerThreadId: turn.providerThread.id,
-                nodeId: turn.rootNodeId,
-                runAttemptId: turn.attemptId,
-                nativeTurnRef: { driver, nativeId: `native:${turn.attemptId}`, strength: "strong" },
-                ordinal: turn.providerTurnOrdinal,
-                status: "running",
-                startedAt: now,
-                completedAt: null,
-              },
-            }).pipe(Effect.asVoid),
+              providerTurn,
+            }).pipe(Effect.asVoid);
+          },
           steerTurn: () => Effect.die("unused"),
-          interruptTurn: () => Effect.void,
+          // A steering restart interrupts the running turn before starting the next one.
+          interruptTurn: ({ providerTurnId }) => {
+            const turn = startedTurns.get(providerTurnId)!;
+            return Queue.offerAll(events, [
+              {
+                type: "provider_turn.updated",
+                driver,
+                providerTurn: { ...turn.providerTurn, status: "interrupted", completedAt: now },
+              },
+              {
+                type: "turn.terminal",
+                driver,
+                providerThreadId: turn.providerTurn.providerThreadId,
+                providerTurnId,
+                runOrdinal: turn.runOrdinal,
+                status: "interrupted",
+                failure: null,
+                threadDisposition: "reusable",
+              },
+            ]).pipe(Effect.asVoid);
+          },
           respondToRuntimeRequest: () => Effect.void,
           readThreadSnapshot: () => Effect.die("unused"),
           rollbackThread: () => Effect.die("unused"),
@@ -170,6 +199,28 @@ const runFirstTurn = Effect.fn("runFirstTurn")(function* (input: {
     yield* worker.drain();
     yield* Fiber.join(running);
 
+    if (input.steerRestartDuringRun === true) {
+      const runs = (yield* orchestrator.getThreadProjection(threadId)).runs;
+      const restarted = yield* watch(
+        (event) =>
+          event.type === "provider-turn.updated" &&
+          event.payload.status === "running" &&
+          event.payload.runAttemptId !== runs[0]!.activeAttemptId,
+      );
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("steer"),
+        threadId,
+        messageId: MessageId.make("message:steer"),
+        text: "Also handle negative readings",
+        attachments: [],
+        dispatchMode: { type: "restart_active", targetRunId: runs[0]!.id },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* worker.drain();
+      yield* Fiber.join(restarted);
+    }
     if (input.renameDuringRun === true) {
       yield* orchestrator.dispatch({
         type: "thread.metadata.update",
@@ -197,8 +248,11 @@ const runFirstTurn = Effect.fn("runFirstTurn")(function* (input: {
     );
 
     const started = yield* orchestrator.getThreadProjection(threadId);
-    const firstRun = started.runs.find((run) => run.userMessageId === firstMessageId)!;
-    const turn = started.providerTurns[0]!;
+    const firstRunId = started.messages.find((message) => message.id === firstMessageId)!.runId;
+    const firstRun = started.runs.find((run) => run.id === firstRunId)!;
+    const turn = started.providerTurns.find(
+      (candidate) => candidate.runAttemptId === firstRun.activeAttemptId,
+    )!;
     const ended = yield* watch(
       (event) =>
         event.type === "run.updated" &&
@@ -290,6 +344,23 @@ describe("first-run title refresh", () => {
         assert.isNull(result.thread.titleRefreshMessageId);
         assert.isNull(result.thread.titleRegeneration);
         assert.deepEqual(result.refreshEffects, []);
+      }),
+    ),
+  );
+
+  it.effect("regenerates the title after a steering restart of the first run", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const result = yield* runFirstTurn({
+          name: "steer-restart",
+          text: "$wayfinder 769",
+          ending: "completed",
+          steerRestartDuringRun: true,
+        });
+        assert.isNull(result.thread.titleRefreshMessageId);
+        assert.deepEqual(result.refreshEffects, [
+          { type: "thread-title.generate", kind: { type: "regenerate" } },
+        ]);
       }),
     ),
   );

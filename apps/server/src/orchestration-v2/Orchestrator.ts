@@ -10628,7 +10628,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const refreshTitleAfterFirstRun = (run: OrchestrationV2Run) =>
     Effect.gen(function* () {
       const thread = yield* projectionStore.getThread(run.threadId);
-      if (thread.titleRefreshMessageId !== run.userMessageId) return;
+      const messageId = thread.titleRefreshMessageId;
+      if (messageId == null) return;
+      // A steering restart replaces run.userMessageId, so match the marked
+      // message's own run instead.
+      const { messages } = yield* projectionStore.getThreadRecords(run.threadId, ["messages"], {
+        messageIds: [messageId],
+      });
+      if (messages[0]?.runId !== run.id) return;
       const now = yield* DateTime.now;
       const commandId = CommandId.make(`command:system:title-refresh:${run.id}`);
       // Archive and delete clear the marker, so only a live thread gets here.
