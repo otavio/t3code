@@ -1,6 +1,7 @@
 import type {
   ApplicationStoredEvent,
   OrchestrationProjectShell,
+  OrchestrationV2ArchivedShellSnapshot,
   OrchestrationV2ArchivedShellStreamItem,
   OrchestrationV2ShellSnapshot,
   OrchestrationV2ThreadShell,
@@ -17,6 +18,9 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+
+import { rpcInitialItems } from "../rpcInitialItems.ts";
+import { bufferLiveStream, type LiveStreamBufferError } from "./LiveStreamBudget.ts";
 
 /** Build the regular navigation shell without duplicating the archive dataset. */
 export function buildActiveShellSnapshot(input: {
@@ -301,6 +305,52 @@ export function archivedShellItemsNeedSnapshot(
 ): boolean {
   return items.some(
     (item) => item.kind === "thread.updated" && !knownProjectIds.has(item.thread.projectId),
+  );
+}
+
+/**
+ * Streams the archive from `snapshot`. When a batch archives a thread in a
+ * project the subscriber has not seen, the live segment ends and a new one
+ * starts from a fresh snapshot. Snapshots go out like the initial one, outside
+ * the live budget, so a large archive cannot overflow it.
+ */
+export function archivedShellStream<E, R, E2, R2>(input: {
+  readonly snapshot: OrchestrationV2ArchivedShellSnapshot;
+  readonly loadSnapshot: Effect.Effect<OrchestrationV2ArchivedShellSnapshot, E, R>;
+  readonly batchesFrom: (
+    afterSequence: number,
+  ) => Stream.Stream<ReadonlyArray<OrchestrationV2ArchivedShellStreamItem>, E2, R2>;
+}): Stream.Stream<OrchestrationV2ArchivedShellStreamItem, E | E2 | LiveStreamBufferError, R | R2> {
+  // Closures below must not reference `input`, or a delivered snapshot would
+  // stay alive for the whole segment.
+  const { loadSnapshot, batchesFrom } = input;
+  const knownProjectIds = new Set(input.snapshot.projects.map((project) => project.id));
+  let resync: OrchestrationV2ArchivedShellSnapshot | undefined;
+  const live = batchesFrom(input.snapshot.snapshotSequence).pipe(
+    Stream.mapEffect((items) =>
+      archivedShellItemsNeedSnapshot(items, knownProjectIds)
+        ? Effect.map(loadSnapshot, (fresh) => {
+            resync = fresh;
+            return [];
+          })
+        : Effect.succeed(items),
+    ),
+    Stream.takeUntil(() => resync !== undefined),
+    Stream.flatMap(Stream.fromIterable),
+    (stream) => bufferLiveStream(stream),
+  );
+  return Stream.concat(
+    rpcInitialItems([{ kind: "snapshot" as const, snapshot: input.snapshot }]),
+    Stream.concat(
+      live,
+      Stream.suspend(() => {
+        const snapshot = resync;
+        resync = undefined;
+        return snapshot === undefined
+          ? Stream.empty
+          : archivedShellStream({ snapshot, loadSnapshot, batchesFrom });
+      }),
+    ),
   );
 }
 
