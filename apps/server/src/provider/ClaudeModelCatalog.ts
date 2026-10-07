@@ -198,7 +198,7 @@ export function withClaudeReportedModels(
       stripClaudeModelSuffix(id).toLowerCase(),
     );
     if (ids.some((id) => id && known.has(id))) continue;
-    known.add(slug.toLowerCase());
+    for (const id of ids) if (id) known.add(id);
     discovered.push({
       model: {
         slug,
