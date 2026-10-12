@@ -5456,6 +5456,11 @@ function AllowDirenvButton({
   const [state, setState] = useState<"idle" | "pending" | "allowed">(() =>
     allowedDirenvWarnings.has(warningId) ? "allowed" : "idle",
   );
+  // Clients without the operate grant can read the warning but not act on it.
+  const permitted = useAtomValue(
+    threadEnvironment.allowDirenv.permissionAtom(threadRef.environmentId),
+  );
+  if (!permitted) return null;
   const onClick = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     setState("pending");

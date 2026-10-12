@@ -846,6 +846,9 @@ function AllowDirenvButton(props: {
   const [state, setState] = useState<"idle" | "pending" | "allowed">(() =>
     allowedDirenvWarnings.has(props.warningId) ? "allowed" : "idle",
   );
+  // Clients without the operate grant can read the warning but not act on it.
+  const permitted = useAtomValue(threadEnvironment.allowDirenv.permissionAtom(props.environmentId));
+  if (!permitted) return null;
   return (
     <Pressable
       accessibilityRole="button"
